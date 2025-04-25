@@ -30,29 +30,55 @@ int test_server(void);
 int main(int argc, char **argv) {
 	juice_set_log_level(JUICE_LOG_LEVEL_WARN);
 
-	printf("\nRunning CRC32 implementation test...\n");
-	if (test_crc32()) {
-		fprintf(stderr, "CRC32 implementation test failed\n");
-		return -2;
-	}
+//	printf("\nRunning CRC32 implementation test...\n");
+//	if (test_crc32()) {
+//		fprintf(stderr, "CRC32 implementation test failed\n");
+//		return -2;
+//	}
+//
+//	printf("\nRunning base64 implementation test...\n");
+//	if (test_base64()) {
+//		fprintf(stderr, "base64 implementation test failed\n");
+//		return -2;
+//	}
+//
+//	printf("\nRunning STUN parsing implementation test...\n");
+//	if (test_stun()) {
+//		fprintf(stderr, "STUN parsing implementation test failed\n");
+//		return -3;
+//	}
+//
+//	printf("\nRunning candidates gathering test...\n");
+//	if (test_gathering()) {
+//		fprintf(stderr, "Candidates gathering test failed\n");
+//		return -1;
+//	}
+//
 
-	printf("\nRunning base64 implementation test...\n");
-	if (test_base64()) {
-		fprintf(stderr, "base64 implementation test failed\n");
-		return -2;
-	}
-
-	printf("\nRunning STUN parsing implementation test...\n");
-	if (test_stun()) {
-		fprintf(stderr, "STUN parsing implementation test failed\n");
-		return -3;
-	}
-
-	printf("\nRunning candidates gathering test...\n");
-	if (test_gathering()) {
-		fprintf(stderr, "Candidates gathering test failed\n");
-		return -1;
-	}
+	/*****************************************************
+	*******************************************************
+	*******************************************************
+	* 
+	* IMPORTANT!
+	* 
+	* Only enabled the tests that makes sense for testing
+	* a remote TURN/STUN server. We are not interested
+	* in testing libnice itself.
+	* 
+	* You need to provide a config.h file in the juice/src
+	* folder with the following content:
+	* -----------------------------------------------------
+	* #define TURN_SERVER    "turn.myvr.net"
+	* #define TURN_PORT      443
+	* #define TURN_USERNAME  "VALID-USERNAME"
+	* #define TURN_PASSWORD  "VALID-PASSWORD"
+	* -----------------------------------------------------
+	* 
+	* Replace with proper values.
+	* 
+	*******************************************************
+	*******************************************************
+	******************************************************/
 
 	printf("\nRunning connectivity test...\n");
 	if (test_connectivity()) {
@@ -60,14 +86,12 @@ int main(int argc, char **argv) {
 		return -1;
 	}
 
-// Disabled as the Open Relay TURN server is unreliable
-/*
 	printf("\nRunning TURN connectivity test...\n");
 	if (test_turn()) {
 		fprintf(stderr, "TURN connectivity test failed\n");
 		return -1;
 	}
-*/
+
 	printf("\nRunning thread-mode connectivity test...\n");
 	if (test_thread()) {
 		fprintf(stderr, "Thread-mode connectivity test failed\n");
@@ -86,31 +110,31 @@ int main(int argc, char **argv) {
 		return -1;
 	}
 
-	printf("\nRunning connectivity test with role conflict...\n");
-	if (test_conflict()) {
-		fprintf(stderr, "Connectivity test with role conflict failed\n");
-		return -1;
-	}
+//	printf("\nRunning connectivity test with role conflict...\n");
+//	if (test_conflict()) {
+//		fprintf(stderr, "Connectivity test with role conflict failed\n");
+//		return -1;
+//	}
+//
+//	printf("\nRunning connectivity test with bind address...\n");
+//	if (test_bind()) {
+//		fprintf(stderr, "Connectivity test with bind address failed\n");
+//		return -1;
+//	}
+//
+//	printf("\nRunning ufrag test...\n");
+//	if (test_ufrag()) {
+//		fprintf(stderr, "Ufrag test failed\n");
+//		return -1;
+//	}0
 
-	printf("\nRunning connectivity test with bind address...\n");
-	if (test_bind()) {
-		fprintf(stderr, "Connectivity test with bind address failed\n");
-		return -1;
-	}
-
-	printf("\nRunning ufrag test...\n");
-	if (test_ufrag()) {
-		fprintf(stderr, "Ufrag test failed\n");
-		return -1;
-	}
-
-#ifndef NO_SERVER
-	printf("\nRunning server test...\n");
-	if (test_server()) {
-		fprintf(stderr, "Server test failed\n");
-		return -1;
-	}
-#endif
+//#ifndef NO_SERVER
+//	printf("\nRunning server test...\n");
+//	if (test_server()) {
+//		fprintf(stderr, "Server test failed\n");
+//		return -1;
+//	}
+//#endif
 
 	return 0;
 }
