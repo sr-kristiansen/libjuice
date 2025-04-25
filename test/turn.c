@@ -20,6 +20,8 @@ static void sleep(unsigned int secs) { Sleep(secs * 1000); }
 #include <unistd.h> // for sleep
 #endif
 
+#include "config.h"
+
 #define BUFFER_SIZE 4096
 
 static juice_agent_t *agent1;
@@ -45,16 +47,16 @@ int test_turn() {
 	memset(&config1, 0, sizeof(config1));
 
 	// STUN server example (use your own server in production)
-	config1.stun_server_host = "openrelay.metered.ca";
-	config1.stun_server_port = 80;
+	config1.stun_server_host = TURN_SERVER;
+	config1.stun_server_port = TURN_PORT;
 
 	// TURN server example (use your own server in production)
 	juice_turn_server_t turn_server;
 	memset(&turn_server, 0, sizeof(turn_server));
-	turn_server.host = "openrelay.metered.ca";
-	turn_server.port = 80;
-	turn_server.username = "openrelayproject";
-	turn_server.password = "openrelayproject";
+	turn_server.host = TURN_SERVER;
+	turn_server.port = TURN_PORT;
+	turn_server.username = TURN_USERNAME;
+	turn_server.password = TURN_PASSWORD;
 	config1.turn_servers = &turn_server;
 	config1.turn_servers_count = 1;
 
@@ -71,8 +73,8 @@ int test_turn() {
 	memset(&config2, 0, sizeof(config2));
 
 	// STUN server example (use your own server in production)
-	config2.stun_server_host = "openrelay.metered.ca";
-	config2.stun_server_port = 80;
+	config2.stun_server_host = TURN_SERVER;
+	config2.stun_server_port = TURN_PORT;
 
 	config2.cb_state_changed = on_state_changed2;
 	config2.cb_candidate = on_candidate2;

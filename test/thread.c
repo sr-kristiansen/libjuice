@@ -20,6 +20,8 @@ static void sleep(unsigned int secs) { Sleep(secs * 1000); }
 #include <unistd.h> // for sleep
 #endif
 
+#include "config.h"
+
 #define BUFFER_SIZE 4096
 
 static juice_agent_t *agent1;
@@ -44,7 +46,7 @@ int test_thread() {
 	juice_config_t config1;
 	memset(&config1, 0, sizeof(config1));
 	config1.concurrency_mode = JUICE_CONCURRENCY_MODE_THREAD;
-	config1.stun_server_host = "stun.l.google.com";
+	config1.stun_server_host = TURN_SERVER;
 	config1.stun_server_port = 19302;
 	config1.cb_state_changed = on_state_changed1;
 	config1.cb_candidate = on_candidate1;
@@ -58,7 +60,7 @@ int test_thread() {
 	juice_config_t config2;
 	memset(&config2, 0, sizeof(config2));
 	config2.concurrency_mode = JUICE_CONCURRENCY_MODE_THREAD;
-	config2.stun_server_host = "stun.l.google.com";
+	config2.stun_server_host = TURN_SERVER;
 	config2.stun_server_port = 19302;
 	config2.cb_state_changed = on_state_changed2;
 	config2.cb_candidate = on_candidate2;
