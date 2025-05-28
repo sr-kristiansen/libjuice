@@ -8,8 +8,14 @@
 
 #include "juice/juice.h"
 
-#include <stdio.h>
+extern "C" {
+#include "config.h"
+}
 
+#include <stdio.h>
+#include <iostream>
+
+extern "C" {
 int test_crc32(void);
 int test_base64(void);
 int test_stun(void);
@@ -22,13 +28,34 @@ int test_turn(void);
 int test_conflict(void);
 int test_bind(void);
 int test_ufrag(void);
+}
 
 #ifndef NO_SERVER
 int test_server(void);
 #endif
 
-int main(int argc, char **argv) {
+int main(int argc, char **argv, char **envp) {
 	juice_set_log_level(JUICE_LOG_LEVEL_WARN);
+
+	if (argc != 2 && argc != 5 && argc != 6) {
+		std::cerr << "Usage: TurnTester <turn-server-endpoint>\n";
+		return -1;
+	}
+
+	TurnServer = argv[1];
+	if (argc > 2) {
+		TurnPort = atoi(argv[2]);
+		TurnUsername = argv[3];
+		TurnPassword = argv[4];
+	} else {
+		TurnPort = 443;
+		TurnUsername = "1704991274";
+		TurnPassword = "RKss8KEHRtYynTBWv48hS63n";
+	}
+
+	std::cout << "*** Running TurnTester on the following TURN server: " << TurnServer << " ***" << std::endl;
+
+	bool waitForAnyKey = argc != 6;
 
 //	printf("\nRunning CRC32 implementation test...\n");
 //	if (test_crc32()) {
@@ -68,10 +95,10 @@ int main(int argc, char **argv) {
 	* You need to provide a config.h file in the juice/src
 	* folder with the following content:
 	* -----------------------------------------------------
-	* #define TURN_SERVER    "turn.myvr.net"
-	* #define TURN_PORT      443
-	* #define TURN_USERNAME  "VALID-USERNAME"
-	* #define TURN_PASSWORD  "VALID-PASSWORD"
+	* #define TurnServer    "turn.myvr.net"
+	* #define TurnPort      443
+	* #define TurnUsername  "VALID-USERNAME"
+	* #define TurnPassword  "VALID-PASSWORD"
 	* -----------------------------------------------------
 	* 
 	* Replace with proper values.
@@ -83,30 +110,35 @@ int main(int argc, char **argv) {
 	printf("\nRunning connectivity test...\n");
 	if (test_connectivity()) {
 		fprintf(stderr, "Connectivity test failed\n");
+		if (waitForAnyKey) { printf("\nPress any key to exit...\n"); getchar(); };
 		return -1;
 	}
 
 	printf("\nRunning TURN connectivity test...\n");
 	if (test_turn()) {
 		fprintf(stderr, "TURN connectivity test failed\n");
+		if (waitForAnyKey) { printf("\nPress any key to exit...\n"); getchar(); };
 		return -1;
 	}
 
 	printf("\nRunning thread-mode connectivity test...\n");
 	if (test_thread()) {
 		fprintf(stderr, "Thread-mode connectivity test failed\n");
+		if (waitForAnyKey) { printf("\nPress any key to exit...\n"); getchar(); };
 		return -1;
 	}
 
 	printf("\nRunning mux-mode connectivity test...\n");
 	if (test_mux()) {
 		fprintf(stderr, "Mux-mode connectivity test failed\n");
+		if (waitForAnyKey) { printf("\nPress any key to exit...\n"); getchar(); };
 		return -1;
 	}
 
 	printf("\nRunning non-trickled connectivity test...\n");
 	if (test_notrickle()) {
 		fprintf(stderr, "Non-trickled connectivity test failed\n");
+		if (waitForAnyKey) { printf("\nPress any key to exit...\n"); getchar(); };
 		return -1;
 	}
 
@@ -135,6 +167,8 @@ int main(int argc, char **argv) {
 //		return -1;
 //	}
 //#endif
+
+	if (waitForAnyKey) { printf("\nPress any key to exit...\n"); getchar(); };
 
 	return 0;
 }

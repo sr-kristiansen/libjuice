@@ -21,6 +21,9 @@ set(CMAKE_C_STANDARD 11)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake/Modules)
 
+set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} /MT")
+set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} /MTd")
+
 include(GNUInstallDirs)
 
 if(WIN32)
@@ -66,7 +69,7 @@ set(LIBJUICE_HEADERS
 source_group("Header Files" FILES "${LIBJUICE_HEADERS}")
 
 set(TESTS_SOURCES
-    ${CMAKE_CURRENT_SOURCE_DIR}/test/main.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/main.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/test/crc32.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/base64.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/stun.c
@@ -79,6 +82,7 @@ set(TESTS_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/test/server.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/conflict.c
     ${CMAKE_CURRENT_SOURCE_DIR}/test/bind.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/test/config.c
 	${CMAKE_CURRENT_SOURCE_DIR}/test/ufrag.c
 )
 source_group("Test Files" FILES "${TESTS_SOURCES}")
@@ -231,10 +235,11 @@ if(NOT NO_TESTS)
 
 	set_target_properties(juice-tests PROPERTIES
 		VERSION ${PROJECT_VERSION}
-		OUTPUT_NAME tests)
+		OUTPUT_NAME TurnTester)
 
 	set_target_properties(juice-tests PROPERTIES
-		XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER com.github.paullouisageneau.libjuice.tests)
+		XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER com.github.paullouisageneau.libjuice.tests
+	)
 
 	target_link_libraries(juice-tests juice Threads::Threads)
 endif()
