@@ -44,8 +44,8 @@ int test_notrickle() {
 	memset(&config1, 0, sizeof(config1));
 
 	// STUN server example
-	config1.stun_server_host = TURN_SERVER;
-	config1.stun_server_port = TURN_PORT;
+	config1.stun_server_host = TurnServer;
+	config1.stun_server_port = TurnPort;
 
 	config1.cb_state_changed = on_state_changed1;
 	config1.cb_gathering_done = on_gathering_done1;
@@ -59,8 +59,8 @@ int test_notrickle() {
 	memset(&config2, 0, sizeof(config2));
 
 	// STUN server example
-	config2.stun_server_host = TURN_SERVER;
-	config2.stun_server_port = TURN_PORT;
+	config2.stun_server_host = TurnServer;
+	config2.stun_server_port = TurnPort;
 
 	config2.concurrency_mode = JUICE_CONCURRENCY_MODE_THREAD;
 	config2.cb_state_changed = on_state_changed2;
