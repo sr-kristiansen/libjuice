@@ -241,7 +241,7 @@ if(NOT NO_TESTS)
 		XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER com.github.paullouisageneau.libjuice.tests
 	)
 
-	target_link_libraries(juice-tests juice Threads::Threads)
+	target_link_libraries(juice-tests juice-static Threads::Threads)
 endif()
 
 # Fuzzer
