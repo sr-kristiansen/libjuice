@@ -37,8 +37,8 @@ int test_server(void);
 int main(int argc, char **argv, char **envp) {
 	juice_set_log_level(JUICE_LOG_LEVEL_WARN);
 
-	if (argc != 2 && argc != 5 && argc != 6) {
-		std::cerr << "Usage: TurnTester <turn-server-endpoint>\n";
+	if (argc != 3 && argc != 5 && argc != 6) {
+		std::cerr << "Usage: TurnTester <turn-server-endpoint> <port> [<user> <pass>]\nFor shared-secret, first use the mTurnAuthGenerator to create a time-limited token.\n";
 		return -1;
 	}
 
