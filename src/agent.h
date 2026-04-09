@@ -119,6 +119,10 @@ typedef struct agent_stun_entry {
 	unsigned int turn_redirections;
 	struct agent_stun_entry *relay_entry;
 
+	// TURN transport (TCP/TLS)
+	juice_turn_transport_t turn_transport;
+	void *turn_tcp;  // tcp_turn_conn_t* (NULL for UDP)
+
 } agent_stun_entry_t;
 
 struct juice_agent {
@@ -168,6 +172,7 @@ int agent_relay_send(juice_agent_t *agent, agent_stun_entry_t *entry, const addr
                      const char *data, size_t size, int ds);
 int agent_channel_send(juice_agent_t *agent, agent_stun_entry_t *entry, const addr_record_t *dst,
                        const char *data, size_t size, int ds);
+int agent_turn_send(juice_agent_t *agent, agent_stun_entry_t *entry, const char *data, size_t size);
 juice_state_t agent_get_state(juice_agent_t *agent);
 int agent_get_selected_candidate_pair(juice_agent_t *agent, ice_candidate_t *local,
                                       ice_candidate_t *remote);

@@ -15,6 +15,7 @@ option(CLANG_TIDY "Enable clang-tidy" OFF)
 option(DISABLE_CONSENT_FRESHNESS "Disable RFC 7675 Consent Freshness" OFF)
 option(ENABLE_LOCALHOST_ADDRESS "List localhost addresses in candidates" OFF)
 option(ENABLE_LOCAL_ADDRESS_TRANSLATION "Translate local addresses to localhost" OFF)
+option(USE_TLS "Enable TLS support for TURNS (requires OpenSSL)" OFF)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -52,6 +53,7 @@ set(LIBJUICE_SOURCES
 	${CMAKE_CURRENT_SOURCE_DIR}/src/random.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/server.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/stun.c
+	${CMAKE_CURRENT_SOURCE_DIR}/src/tcp.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/timestamp.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/turn.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/udp.c
@@ -128,6 +130,12 @@ if (USE_NETTLE)
 else()
     target_compile_definitions(juice PRIVATE USE_NETTLE=0)
     target_compile_definitions(juice-static PRIVATE USE_NETTLE=0)
+endif()
+
+if (USE_TLS)
+	find_package(OpenSSL REQUIRED)
+	target_compile_definitions(juice PRIVATE JUICE_ENABLE_TLS=1)
+	target_link_libraries(juice PRIVATE OpenSSL::SSL OpenSSL::Crypto)
 endif()
 
 if (NO_SERVER)

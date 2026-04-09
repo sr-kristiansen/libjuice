@@ -49,6 +49,8 @@ bool is_valid_channel(uint16_t channel);
 
 int turn_wrap_channel_data(char *buffer, size_t size, const char *data, size_t data_size,
                            uint16_t channel);
+int turn_wrap_channel_data_tcp(char *buffer, size_t size, const char *data, size_t data_size,
+                               uint16_t channel);
 
 // TURN state map
 

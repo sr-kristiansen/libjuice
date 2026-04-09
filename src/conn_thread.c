@@ -10,6 +10,7 @@
 #include "agent.h"
 #include "log.h"
 #include "socket.h"
+#include "tcp.h"
 #include "thread.h"
 #include "udp.h"
 
@@ -129,15 +130,45 @@ int conn_thread_recv(socket_t sock, char *buffer, size_t size, addr_record_t *sr
 }
 
 int conn_thread_run(juice_agent_t *agent) {
-	struct pollfd pfd[1];
+	// 1 UDP socket + up to MAX_RELAY_ENTRIES_COUNT TCP TURN sockets
+	struct pollfd pfd[1 + MAX_RELAY_ENTRIES_COUNT];
 	timestamp_t next_timestamp;
-	while (conn_thread_prepare(agent, pfd, &next_timestamp) > 0) {
+	while (conn_thread_prepare(agent, &pfd[0], &next_timestamp) > 0) {
+		// Count TCP TURN sockets to poll
+		int nfds = 1; // UDP socket
+		conn_impl_t *conn_impl = agent->conn_impl;
+		mutex_lock(&conn_impl->mutex);
+		for (int i = 0; i < agent->entries_count && nfds < 1 + MAX_RELAY_ENTRIES_COUNT; ++i) {
+			agent_stun_entry_t *entry = &agent->entries[i];
+			if (entry->type == AGENT_STUN_ENTRY_TYPE_RELAY && entry->turn_tcp) {
+				tcp_turn_conn_t *tcp_conn = (tcp_turn_conn_t *)entry->turn_tcp;
+				tcp_conn_state_t tcp_state = tcp_turn_get_state(tcp_conn);
+				if (tcp_state == TCP_CONN_STATE_CONNECTING) {
+					pfd[nfds].fd = tcp_turn_get_socket(tcp_conn);
+					pfd[nfds].events = POLLOUT; // waiting for connect completion
+					nfds++;
+				} else if (tcp_state == TCP_CONN_STATE_CONNECTED) {
+					pfd[nfds].fd = tcp_turn_get_socket(tcp_conn);
+					pfd[nfds].events = POLLIN;
+					nfds++;
+				}
+#ifdef JUICE_ENABLE_TLS
+				else if (tcp_state == TCP_CONN_STATE_TLS_HANDSHAKE) {
+					pfd[nfds].fd = tcp_turn_get_socket(tcp_conn);
+					pfd[nfds].events = POLLIN | POLLOUT; // TLS handshake needs both
+					nfds++;
+				}
+#endif
+			}
+		}
+		mutex_unlock(&conn_impl->mutex);
+
 		timediff_t timediff = next_timestamp - current_timestamp();
 		if (timediff < 0)
 			timediff = 0;
 
 		JLOG_VERBOSE("Entering poll for %d ms", (int)timediff);
-		int ret = poll(pfd, 1, (int)timediff);
+		int ret = poll(pfd, (nfds_t)nfds, (int)timediff);
 		JLOG_VERBOSE("Leaving poll");
 		if (ret < 0) {
 			if (sockerrno == SEINTR || sockerrno == SEAGAIN) {
@@ -149,8 +180,80 @@ int conn_thread_run(juice_agent_t *agent) {
 			}
 		}
 
-		if (conn_thread_process(agent, pfd) < 0)
+		// Process UDP socket first
+		if (conn_thread_process(agent, &pfd[0]) < 0)
 			break;
+
+		// Process TCP TURN sockets
+		conn_impl = agent->conn_impl;
+		mutex_lock(&conn_impl->mutex);
+		if (!conn_impl->stopped) {
+			for (int p = 1; p < nfds; ++p) {
+				if (pfd[p].fd == INVALID_SOCKET)
+					continue;
+				// Find the matching entry
+				for (int i = 0; i < agent->entries_count; ++i) {
+					agent_stun_entry_t *entry = &agent->entries[i];
+					if (entry->type != AGENT_STUN_ENTRY_TYPE_RELAY || !entry->turn_tcp)
+						continue;
+					tcp_turn_conn_t *tcp_conn = (tcp_turn_conn_t *)entry->turn_tcp;
+					if (tcp_turn_get_socket(tcp_conn) != pfd[p].fd)
+						continue;
+
+					if (pfd[p].revents & (POLLNVAL | POLLERR)) {
+						JLOG_WARN("Error on TCP TURN socket");
+						entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
+						break;
+					}
+
+					tcp_conn_state_t tcp_state = tcp_turn_get_state(tcp_conn);
+					if (tcp_state == TCP_CONN_STATE_CONNECTING && (pfd[p].revents & POLLOUT)) {
+						int cr = tcp_turn_check_connect(tcp_conn);
+						if (cr < 0) {
+							JLOG_WARN("TCP TURN connect failed");
+							entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
+						} else if (cr > 0) {
+							JLOG_INFO("TCP TURN connection established");
+							// Trigger bookkeeping to send the ALLOCATE request
+							conn_impl->next_timestamp = current_timestamp();
+						}
+					}
+#ifdef JUICE_ENABLE_TLS
+					else if (tcp_state == TCP_CONN_STATE_TLS_HANDSHAKE &&
+					         (pfd[p].revents & (POLLIN | POLLOUT))) {
+						int hr = tcp_turn_tls_handshake(tcp_conn);
+						if (hr < 0) {
+							JLOG_WARN("TLS handshake failed");
+							entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
+						} else if (hr > 0) {
+							JLOG_INFO("TLS connection established");
+							conn_impl->next_timestamp = current_timestamp();
+						}
+					}
+#endif
+					else if (tcp_state == TCP_CONN_STATE_CONNECTED && (pfd[p].revents & POLLIN)) {
+						char buffer[BUFFER_SIZE];
+						int len;
+						while ((len = tcp_turn_recv(tcp_conn, buffer, BUFFER_SIZE)) > 0) {
+							if (agent_conn_recv(agent, buffer, (size_t)len, &entry->record) != 0) {
+								JLOG_WARN("Agent receive from TCP TURN failed");
+								break;
+							}
+						}
+						if (len < 0) {
+							JLOG_WARN("TCP TURN connection lost");
+							entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
+						}
+						// Trigger update
+						if (agent_conn_update(agent, &conn_impl->next_timestamp) != 0) {
+							JLOG_WARN("Agent update failed after TCP recv");
+						}
+					}
+					break; // found matching entry
+				}
+			}
+		}
+		mutex_unlock(&conn_impl->mutex);
 	}
 
 	JLOG_DEBUG("Leaving connection thread");
