@@ -65,11 +65,18 @@ typedef void (*juice_cb_gathering_done_t)(juice_agent_t *agent, void *user_ptr);
 typedef void (*juice_cb_recv_t)(juice_agent_t *agent, const char *data, size_t size,
                                 void *user_ptr);
 
+typedef enum juice_turn_transport {
+	JUICE_TURN_TRANSPORT_UDP = 0,   // default, backward-compatible
+	JUICE_TURN_TRANSPORT_TCP,
+	JUICE_TURN_TRANSPORT_TLS
+} juice_turn_transport_t;
+
 typedef struct juice_turn_server {
 	const char *host;
 	const char *username;
 	const char *password;
 	uint16_t port;
+	juice_turn_transport_t transport;
 } juice_turn_server_t;
 
 typedef enum juice_concurrency_mode {
@@ -155,6 +162,29 @@ JUICE_EXPORT uint16_t juice_server_get_port(juice_server_t *server);
 JUICE_EXPORT int juice_server_add_credentials(juice_server_t *server,
                                               const juice_server_credentials_t *credentials,
                                               unsigned long lifetime_ms);
+
+// ICE UDP Mux
+
+typedef struct juice_mux_binding_request {
+	const char *local_ufrag;
+	const char *remote_ufrag;
+	const char *address;
+	uint16_t port;
+} juice_mux_binding_request_t;
+
+typedef void (*juice_mux_cb_t)(const juice_mux_binding_request_t *info, void *user_ptr);
+
+JUICE_EXPORT int juice_mux_listen(const char *bind_address, uint16_t port,
+                                  juice_mux_cb_t cb, void *user_ptr);
+
+// ICE TCP mode
+
+typedef enum juice_ice_tcp_mode {
+	JUICE_ICE_TCP_MODE_NONE = 0,
+	JUICE_ICE_TCP_MODE_ACTIVE
+} juice_ice_tcp_mode_t;
+
+JUICE_EXPORT int juice_set_ice_tcp_mode(juice_agent_t *agent, juice_ice_tcp_mode_t mode);
 
 // Logging
 

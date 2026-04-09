@@ -78,6 +78,35 @@ int turn_wrap_channel_data(char *buffer, size_t size, const char *data, size_t d
 	return (int)(sizeof(struct channel_data_header) + data_size);
 }
 
+int turn_wrap_channel_data_tcp(char *buffer, size_t size, const char *data, size_t data_size,
+                               uint16_t channel) {
+	// Same as turn_wrap_channel_data but with padding to 4-byte boundary per RFC 8656 Section 12.6
+	if (!is_valid_channel(channel)) {
+		JLOG_WARN("Invalid channel number: 0x%hX", channel);
+		return -1;
+	}
+	if (data_size >= 65536) {
+		JLOG_WARN("ChannelData is too long, size=%zu", size);
+		return -1;
+	}
+	size_t padded_len = (data_size + 3) & ~(size_t)3;
+	size_t total_size = sizeof(struct channel_data_header) + padded_len;
+	if (size < total_size) {
+		JLOG_WARN("Buffer is too small to add ChannelData header with padding, size=%zu, needed=%zu",
+		          size, total_size);
+		return -1;
+	}
+	struct channel_data_header header;
+	header.channel_number = htons(channel);
+	header.length = htons((uint16_t)data_size);
+	memcpy(buffer, &header, sizeof(header));
+	memcpy(buffer + sizeof(header), data, data_size);
+	// Zero-fill padding bytes
+	if (padded_len > data_size)
+		memset(buffer + sizeof(header) + data_size, 0, padded_len - data_size);
+	return (int)total_size;
+}
+
 static int find_ordered_channel_rec(turn_entry_t *const ordered_channels[], uint16_t channel,
                                     int begin, int end) {
 	int d = end - begin;

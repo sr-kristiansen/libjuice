@@ -1,6 +1,6 @@
 cmake_minimum_required (VERSION 3.7)
-project (libjuice
-	VERSION 1.5.1
+project (juice
+	VERSION 1.7.0
 	LANGUAGES C)
 set(PROJECT_DESCRIPTION "UDP Interactive Connectivity Establishment (ICE) library")
 
@@ -15,6 +15,7 @@ option(CLANG_TIDY "Enable clang-tidy" OFF)
 option(DISABLE_CONSENT_FRESHNESS "Disable RFC 7675 Consent Freshness" OFF)
 option(ENABLE_LOCALHOST_ADDRESS "List localhost addresses in candidates" OFF)
 option(ENABLE_LOCAL_ADDRESS_TRANSLATION "Translate local addresses to localhost" OFF)
+option(USE_TLS "Enable TLS support for TURNS (requires OpenSSL)" OFF)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
@@ -52,6 +53,7 @@ set(LIBJUICE_SOURCES
 	${CMAKE_CURRENT_SOURCE_DIR}/src/random.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/server.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/stun.c
+	${CMAKE_CURRENT_SOURCE_DIR}/src/tcp.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/timestamp.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/turn.c
 	${CMAKE_CURRENT_SOURCE_DIR}/src/udp.c
@@ -130,6 +132,14 @@ else()
     target_compile_definitions(juice-static PRIVATE USE_NETTLE=0)
 endif()
 
+if (USE_TLS)
+	find_package(OpenSSL REQUIRED)
+	target_compile_definitions(juice PRIVATE JUICE_ENABLE_TLS=1)
+	target_link_libraries(juice PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+	target_compile_definitions(juice-static PRIVATE JUICE_ENABLE_TLS=1)
+	target_link_libraries(juice-static PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+endif()
+
 if (NO_SERVER)
 	target_compile_definitions(juice PRIVATE NO_SERVER)
 	target_compile_definitions(juice-static PRIVATE NO_SERVER)
@@ -141,13 +151,10 @@ if(APPLE)
 	target_include_directories(juice-static PRIVATE /usr/local/include)
 endif()
 
-set_target_properties(juice PROPERTIES EXPORT_NAME LibJuice)
-add_library(LibJuice::LibJuice ALIAS juice)
+add_library(juice::juice ALIAS juice)
+add_library(juice::juice-static ALIAS juice-static)
 
-set_target_properties(juice-static PROPERTIES EXPORT_NAME LibJuiceStatic)
-add_library(LibJuice::LibJuiceStatic ALIAS juice-static)
-
-install(TARGETS juice EXPORT LibJuiceTargets
+install(TARGETS juice EXPORT juiceTargets
 	RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 	LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
 	ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
@@ -157,30 +164,30 @@ install(FILES ${LIBJUICE_HEADERS} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/juice)
 
 # Export targets
 install(
-	EXPORT LibJuiceTargets
-	FILE LibJuiceTargets.cmake
-	NAMESPACE LibJuice::
-	DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/LibJuice
+	EXPORT juiceTargets
+	FILE juiceTargets.cmake
+	NAMESPACE juice::
+	DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}
 )
 
 include(CMakePackageConfigHelpers)
 configure_package_config_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/cmake/LibJuiceConfig.cmake.in
-    ${CMAKE_BINARY_DIR}/LibJuiceConfig.cmake
-    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/LibJuice
+    ${CMAKE_BINARY_DIR}/juiceConfig.cmake
+    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}
     NO_SET_AND_CHECK_MACRO
     NO_CHECK_REQUIRED_COMPONENTS_MACRO
 )
 write_basic_package_version_file(
-    ${CMAKE_BINARY_DIR}/LibJuiceConfigVersion.cmake
+    ${CMAKE_BINARY_DIR}/juiceConfigVersion.cmake
     VERSION ${PROJECT_VERSION}
     COMPATIBILITY SameMajorVersion
 )
 # Export config and version files
 install(FILES
-	${CMAKE_BINARY_DIR}/LibJuiceConfig.cmake
-	${CMAKE_BINARY_DIR}/LibJuiceConfigVersion.cmake
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/LibJuice)
+	${CMAKE_BINARY_DIR}/juiceConfig.cmake
+	${CMAKE_BINARY_DIR}/juiceConfigVersion.cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME})
 
 set_target_properties(juice PROPERTIES C_VISIBILITY_PRESET hidden)
 target_compile_definitions(juice PRIVATE JUICE_EXPORTS)

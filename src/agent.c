@@ -12,6 +12,7 @@
 #include "log.h"
 #include "random.h"
 #include "stun.h"
+#include "tcp.h"
 #include "turn.h"
 #include "udp.h"
 
@@ -59,6 +60,7 @@ static int copy_turn_server(juice_turn_server_t *dst, const juice_turn_server_t 
 	dst->username = alloc_string_copy(src->username, &alloc_failed);
 	dst->password = alloc_string_copy(src->password, &alloc_failed);
 	dst->port = src->port;
+	dst->transport = src->transport;
 
 	if (alloc_failed) {
 		JLOG_FATAL("Memory allocation for TURN server configuration copy failed");
@@ -167,6 +169,10 @@ void agent_destroy(juice_agent_t *agent) {
 	// Free credentials in entries
 	for (int i = 0; i < agent->entries_count; ++i) {
 		agent_stun_entry_t *entry = agent->entries + i;
+		if (entry->turn_tcp) {
+			tcp_turn_destroy((tcp_turn_conn_t *)entry->turn_tcp);
+			entry->turn_tcp = NULL;
+		}
 		if (entry->turn) {
 			turn_destroy_map(&entry->turn->map);
 			free(entry->turn);
@@ -330,8 +336,12 @@ int agent_resolve_servers(juice_agent_t *agent) {
 			if (!turn_server->host)
 				continue;
 
-			if (!turn_server->port)
-				turn_server->port = 3478; // default TURN port
+			if (!turn_server->port) {
+				if (turn_server->transport == JUICE_TURN_TRANSPORT_TLS)
+					turn_server->port = 5349; // default TURNS port
+				else
+					turn_server->port = 3478; // default TURN port
+			}
 
 			char service[8];
 			snprintf(service, 8, "%hu", turn_server->port);
@@ -379,6 +389,9 @@ int agent_resolve_servers(juice_agent_t *agent) {
 					entry->pair = NULL;
 					entry->record = *record;
 					entry->turn_redirections = 0;
+					entry->turn_transport = turn_server->transport;
+					entry->turn_tcp = NULL;
+
 					entry->turn = calloc(1, sizeof(agent_turn_state_t));
 					if (!entry->turn) {
 						JLOG_ERROR("Memory allocation for TURN state failed");
@@ -393,6 +406,35 @@ int agent_resolve_servers(juice_agent_t *agent) {
 					entry->turn->password = turn_server->password;
 					juice_random(entry->transaction_id, STUN_TRANSACTION_ID_SIZE);
 					++agent->entries_count;
+
+					// Create TCP connection for TCP/TLS TURN
+					if (entry->turn_transport == JUICE_TURN_TRANSPORT_TCP ||
+					    entry->turn_transport == JUICE_TURN_TRANSPORT_TLS) {
+						bool use_tls = (entry->turn_transport == JUICE_TURN_TRANSPORT_TLS);
+						JLOG_INFO("Creating %s connection to TURN server",
+						          use_tls ? "TLS" : "TCP");
+						entry->turn_tcp = tcp_turn_create(record, use_tls);
+						if (!entry->turn_tcp) {
+							JLOG_ERROR("TCP TURN connection creation failed");
+							turn_destroy_map(&entry->turn->map);
+							free(entry->turn);
+							entry->turn = NULL;
+							entry->type = AGENT_STUN_ENTRY_TYPE_EMPTY;
+							--agent->entries_count;
+							continue;
+						}
+						if (tcp_turn_connect((tcp_turn_conn_t *)entry->turn_tcp) < 0) {
+							JLOG_ERROR("TCP TURN connect initiation failed");
+							tcp_turn_destroy((tcp_turn_conn_t *)entry->turn_tcp);
+							entry->turn_tcp = NULL;
+							turn_destroy_map(&entry->turn->map);
+							free(entry->turn);
+							entry->turn = NULL;
+							entry->type = AGENT_STUN_ENTRY_TYPE_EMPTY;
+							--agent->entries_count;
+							continue;
+						}
+					}
 
 					agent_arm_transmission(agent, entry, STUN_PACING_TIME * i);
 
@@ -637,6 +679,26 @@ int agent_send(juice_agent_t *agent, const char *data, size_t size, int ds) {
 	return agent_direct_send(agent, &selected_entry->record, data, size, ds);
 }
 
+int agent_turn_send(juice_agent_t *agent, agent_stun_entry_t *entry, const char *data,
+                    size_t size) {
+	if (entry->turn_transport == JUICE_TURN_TRANSPORT_UDP)
+		return agent_direct_send(agent, &entry->record, data, size, 0);
+
+	// TCP/TLS path
+	if (!entry->turn_tcp) {
+		JLOG_ERROR("TCP TURN connection not established");
+		return -1;
+	}
+
+	tcp_turn_conn_t *tcp_conn = (tcp_turn_conn_t *)entry->turn_tcp;
+	if (tcp_turn_get_state(tcp_conn) != TCP_CONN_STATE_CONNECTED) {
+		JLOG_WARN("TCP TURN connection not ready, state=%d", (int)tcp_turn_get_state(tcp_conn));
+		return -1;
+	}
+
+	return tcp_turn_send(tcp_conn, data, size);
+}
+
 int agent_direct_send(juice_agent_t *agent, const addr_record_t *dst, const char *data, size_t size,
                       int ds) {
 	return conn_send(agent, dst, data, size, ds);
@@ -673,7 +735,7 @@ int agent_relay_send(juice_agent_t *agent, agent_stun_entry_t *entry, const addr
 		return -1;
 	}
 
-	return agent_direct_send(agent, &entry->record, buffer, size, ds);
+	return agent_turn_send(agent, entry, buffer, size);
 }
 
 int agent_channel_send(juice_agent_t *agent, agent_stun_entry_t *entry, const addr_record_t *record,
@@ -693,13 +755,17 @@ int agent_channel_send(juice_agent_t *agent, agent_stun_entry_t *entry, const ad
 
 	// Send the data wrapped as ChannelData
 	char buffer[BUFFER_SIZE];
-	int len = turn_wrap_channel_data(buffer, BUFFER_SIZE, data, size, channel);
+	int len;
+	if (entry->turn_transport != JUICE_TURN_TRANSPORT_UDP)
+		len = turn_wrap_channel_data_tcp(buffer, BUFFER_SIZE, data, size, channel);
+	else
+		len = turn_wrap_channel_data(buffer, BUFFER_SIZE, data, size, channel);
 	if (len <= 0) {
 		JLOG_ERROR("TURN ChannelData wrapping failed");
 		return -1;
 	}
 
-	return agent_direct_send(agent, &entry->record, buffer, len, ds);
+	return agent_turn_send(agent, entry, buffer, len);
 }
 
 juice_state_t agent_get_state(juice_agent_t *agent) {
@@ -823,6 +889,17 @@ int agent_bookkeeping(juice_agent_t *agent, timestamp_t *next_timestamp) {
 		if (entry->state == AGENT_STUN_ENTRY_STATE_PENDING) {
 			if (entry->next_transmission > now)
 				continue;
+
+			// Skip TURN sends if TCP connection not yet ready
+			if (entry->type == AGENT_STUN_ENTRY_TYPE_RELAY &&
+			    entry->turn_transport != JUICE_TURN_TRANSPORT_UDP && entry->turn_tcp) {
+				tcp_turn_conn_t *tcp_conn = (tcp_turn_conn_t *)entry->turn_tcp;
+				if (tcp_turn_get_state(tcp_conn) != TCP_CONN_STATE_CONNECTED) {
+					// TCP not ready yet, reschedule
+					entry->next_transmission = now + 100;
+					continue;
+				}
+			}
 
 			if (entry->retransmissions >= 0) {
 				if (JLOG_DEBUG_ENABLED) {
@@ -1878,7 +1955,7 @@ int agent_send_turn_allocate_request(juice_agent_t *agent, const agent_stun_entr
 		JLOG_ERROR("STUN message write failed");
 		return -1;
 	}
-	if (agent_direct_send(agent, &entry->record, buffer, size, 0) < 0) {
+	if (agent_turn_send(agent, (agent_stun_entry_t *)entry, buffer, size) < 0) {
 		JLOG_WARN("STUN message send failed");
 		return -1;
 	}
@@ -1974,7 +2051,7 @@ int agent_send_turn_create_permission_request(juice_agent_t *agent, agent_stun_e
 		JLOG_ERROR("STUN message write failed");
 		return -1;
 	}
-	if (agent_direct_send(agent, &entry->record, buffer, size, ds) < 0) {
+	if (agent_turn_send(agent, entry, buffer, size) < 0) {
 		JLOG_WARN("STUN message send failed");
 		return -1;
 	}
@@ -2081,7 +2158,7 @@ int agent_send_turn_channel_bind_request(juice_agent_t *agent, agent_stun_entry_
 		JLOG_ERROR("STUN message write failed");
 		return -1;
 	}
-	if (agent_direct_send(agent, &entry->record, buffer, size, ds) < 0) {
+	if (agent_turn_send(agent, entry, buffer, size) < 0) {
 		JLOG_WARN("STUN message send failed");
 		return -1;
 	}

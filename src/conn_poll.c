@@ -10,6 +10,7 @@
 #include "agent.h"
 #include "log.h"
 #include "socket.h"
+#include "tcp.h"
 #include "thread.h"
 #include "udp.h"
 
@@ -178,6 +179,32 @@ int conn_poll_prepare(conn_registry_t *registry, pfds_record_t *pfds, timestamp_
 		pfd->events = POLLIN;
 	}
 
+	// If any TCP TURN connection is in a transient state (connecting, TLS handshake),
+	// use a very short poll timeout so the handshake progresses without delay.
+	for (int idx = 0; idx < registry->agents_size; ++idx) {
+		juice_agent_t *agent = registry->agents[idx];
+		if (!agent)
+			continue;
+		for (int i = 0; i < agent->entries_count; ++i) {
+			agent_stun_entry_t *entry = &agent->entries[i];
+			if (entry->type != AGENT_STUN_ENTRY_TYPE_RELAY || !entry->turn_tcp)
+				continue;
+			tcp_turn_conn_t *tcp_conn = (tcp_turn_conn_t *)entry->turn_tcp;
+			tcp_conn_state_t tcp_state = tcp_turn_get_state(tcp_conn);
+			if (tcp_state == TCP_CONN_STATE_CONNECTING
+#ifdef JUICE_ENABLE_TLS
+			    || tcp_state == TCP_CONN_STATE_TLS_HANDSHAKE
+#endif
+			) {
+				// Don't let poll() block while TCP/TLS handshake is in progress
+				*next_timestamp = now;
+				goto done;
+			}
+		}
+	}
+
+done:
+	;
 	int count = registry->agents_count;
 	mutex_unlock(&registry->mutex);
 	return count;
@@ -281,6 +308,60 @@ int conn_poll_process(conn_registry_t *registry, pfds_record_t *pfds) {
 			}
 		}
 	}
+
+	// Process TCP TURN sockets for each agent
+	for (int idx = 0; idx < registry->agents_size; ++idx) {
+		juice_agent_t *agent = registry->agents[idx];
+		if (!agent)
+			continue;
+		conn_impl_t *conn_impl = agent->conn_impl;
+		if (!conn_impl || conn_impl->state != CONN_STATE_READY)
+			continue;
+		for (int i = 0; i < agent->entries_count; ++i) {
+			agent_stun_entry_t *entry = &agent->entries[i];
+			if (entry->type != AGENT_STUN_ENTRY_TYPE_RELAY || !entry->turn_tcp)
+				continue;
+			tcp_turn_conn_t *tcp_conn = (tcp_turn_conn_t *)entry->turn_tcp;
+			tcp_conn_state_t tcp_state = tcp_turn_get_state(tcp_conn);
+			if (tcp_state == TCP_CONN_STATE_CONNECTING) {
+				int cr = tcp_turn_check_connect(tcp_conn);
+				if (cr < 0) {
+					JLOG_WARN("TCP TURN connect failed");
+					entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
+				} else if (cr > 0) {
+					JLOG_INFO("TCP TURN connection established");
+					conn_impl->next_timestamp = current_timestamp();
+				}
+			}
+#ifdef JUICE_ENABLE_TLS
+			else if (tcp_state == TCP_CONN_STATE_TLS_HANDSHAKE) {
+				int hr = tcp_turn_tls_handshake(tcp_conn);
+				if (hr < 0) {
+					JLOG_WARN("TLS handshake failed");
+					entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
+				} else if (hr > 0) {
+					JLOG_INFO("TLS connection established");
+					conn_impl->next_timestamp = current_timestamp();
+				}
+			}
+#endif
+			else if (tcp_state == TCP_CONN_STATE_CONNECTED) {
+				char buffer[BUFFER_SIZE];
+				int len;
+				while ((len = tcp_turn_recv(tcp_conn, buffer, BUFFER_SIZE)) > 0) {
+					if (agent_conn_recv(agent, buffer, (size_t)len, &entry->record) != 0) {
+						JLOG_WARN("Agent receive from TCP TURN failed");
+						break;
+					}
+				}
+				if (len < 0) {
+					JLOG_WARN("TCP TURN connection lost");
+					entry->state = AGENT_STUN_ENTRY_STATE_FAILED;
+				}
+			}
+		}
+	}
+
 	mutex_unlock(&registry->mutex);
 	return 0;
 }

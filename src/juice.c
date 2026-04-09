@@ -218,3 +218,20 @@ JUICE_EXPORT int juice_server_add_credentials(juice_server_t *server,
 	return JUICE_ERR_INVALID;
 #endif
 }
+
+JUICE_EXPORT int juice_mux_listen(const char *bind_address, uint16_t port,
+                                  juice_mux_cb_t cb, void *user_ptr) {
+	(void)bind_address;
+	(void)port;
+	(void)cb;
+	(void)user_ptr;
+	// Mux mode not supported in this build
+	return -1;
+}
+
+JUICE_EXPORT int juice_set_ice_tcp_mode(juice_agent_t *agent, juice_ice_tcp_mode_t mode) {
+	(void)agent;
+	(void)mode;
+	// ICE-TCP not supported in this build
+	return 0;
+}

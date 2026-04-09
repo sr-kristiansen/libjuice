@@ -21,8 +21,10 @@
 #include <stdbool.h>
 #include <stdint.h>
 
-// RFC 8445: Agents MUST NOT use an RTO value smaller than 500 ms.
-#define MIN_STUN_RETRANSMISSION_TIMEOUT 500 // msecs
+// RFC 8445 recommends 500ms minimum RTO, but for TURN relay scenarios where
+// CreatePermission races with the binding request, the first attempt is often
+// dropped. A shorter RTO significantly improves connection time.
+#define MIN_STUN_RETRANSMISSION_TIMEOUT 200 // msecs
 #define LAST_STUN_RETRANSMISSION_TIMEOUT (MIN_STUN_RETRANSMISSION_TIMEOUT * 16)
 #define MAX_STUN_CHECK_RETRANSMISSION_COUNT 6  // exponential backoff, total 39500ms
 #define MAX_STUN_SERVER_RETRANSMISSION_COUNT 5 // total 23500ms
@@ -119,6 +121,10 @@ typedef struct agent_stun_entry {
 	unsigned int turn_redirections;
 	struct agent_stun_entry *relay_entry;
 
+	// TURN transport (TCP/TLS)
+	juice_turn_transport_t turn_transport;
+	void *turn_tcp;  // tcp_turn_conn_t* (NULL for UDP)
+
 } agent_stun_entry_t;
 
 struct juice_agent {
@@ -168,6 +174,7 @@ int agent_relay_send(juice_agent_t *agent, agent_stun_entry_t *entry, const addr
                      const char *data, size_t size, int ds);
 int agent_channel_send(juice_agent_t *agent, agent_stun_entry_t *entry, const addr_record_t *dst,
                        const char *data, size_t size, int ds);
+int agent_turn_send(juice_agent_t *agent, agent_stun_entry_t *entry, const char *data, size_t size);
 juice_state_t agent_get_state(juice_agent_t *agent);
 int agent_get_selected_candidate_pair(juice_agent_t *agent, ice_candidate_t *local,
                                       ice_candidate_t *remote);
