@@ -1,7 +1,7 @@
 cmake_minimum_required (VERSION 3.7)
 project (juice
 	VERSION 1.7.0
-	LANGUAGES C)
+	LANGUAGES C CXX)
 set(PROJECT_DESCRIPTION "UDP Interactive Connectivity Establishment (ICE) library")
 
 option(USE_NETTLE "Use Nettle for hash functions" OFF)
